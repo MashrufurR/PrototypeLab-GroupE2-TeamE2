@@ -1,0 +1,73 @@
+// --- PIN CONFIGURATION ---
+// Motor Driver Inputs (As specified by you)
+const int IN1 = 5; 
+const int IN2 = 4; 
+const int IN3 = 2; 
+
+// Sensors (From your schematic layout)
+const int IR_LEFT = 2;   // Shared pin 2 note: if troubleshooting in simulation, 
+const int IR_RIGHT = 7;  // you can move Left IR to another pin like D3 if needed.
+const int TRIG_LEFT = 8;
+const int ECHO_LEFT = 9;
+
+void setup() {
+  // Set motor pins as outputs
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+
+  // Set sensor pins
+  pinMode(IR_LEFT, INPUT);
+  pinMode(IR_RIGHT, INPUT);
+  pinMode(TRIG_LEFT, OUTPUT);
+  pinMode(ECHO_LEFT, INPUT);
+}
+
+void loop() {
+  // 1. Measure Distance (Left Ultrasonic Sensor Check)
+  digitalWrite(TRIG_LEFT, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_LEFT, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_LEFT, LOW);
+  
+  long duration = pulseIn(ECHO_LEFT, HIGH);
+  long distance = duration * 0.034 / 2;
+
+  // 2. Prioritized Execution Loop (Safety Boundary First)
+  if (distance < 15) {
+    // Emergency Brake Override
+    motorStop();
+  } 
+  else {
+    // Line-Tracking Navigation Logic
+    int leftLine = digitalRead(IR_LEFT);
+    int rightLine = digitalRead(IR_RIGHT);
+
+    if (leftLine == LOW && rightLine == LOW) {
+      moveForward();
+    } else {
+      turnDrive(); // Execute steering correction if a line is hit
+    }
+  }
+  delay(100); // Small stability delay for simulation
+}
+
+// --- MOTION CONTROL FUNCTIONS ---
+void moveForward() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH); 
+}
+
+void turnDrive() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+}
+
+void motorStop() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+}

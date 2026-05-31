@@ -45,14 +45,6 @@ For our first test we always power the Arduino through USB — it's safer and ea
 | 9V Battery `–` | L298N `GND` terminal |
 | L298N `GND` | Arduino GND (and breadboard `–` rail) |
 
-/*So in short — the battery only powers the motors through the L298N. The Arduino and all sensors run off USB power. But they all share a common ground, which is important.
-
-**A few things to be careful about:**
-- Never plug the 9V `+` into the Arduino `5V` pin. It will damage the board.
-- Don't connect the L298N's `5V` output to the Arduino `5V` at this stage.
-- If the motors spin weakly, don't panic — a rectangular 9V battery just doesn't deliver much current. It's probably not a wiring mistake.
-*/
----
 
 ## C. The ENA / ENB Jumpers on L298N
 

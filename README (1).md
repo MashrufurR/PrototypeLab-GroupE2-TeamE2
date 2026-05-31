@@ -1,4 +1,4 @@
-# Line Following Robot — Wiring Guide
+# Line Following Robot
 
 This is the hardware connection guide for our Arduino-based line following robot. We built this for real-life use, so if you're coming from the Tinkercad simulation, note that we replaced the two switches with actual IR sensors here.
 

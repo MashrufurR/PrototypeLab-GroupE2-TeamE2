@@ -1,0 +1,242 @@
+/*
+  Full Tinkercad Simulation Code
+  Behaviour:
+  - Normal movement = fast
+  - Line correction/turn = slow
+  - Obstacle within 30 cm = motors completely OFF
+
+  IR sensors are simulated using 2 slide switches.
+*/
+
+// ================= L293D Motor Driver Pins =================
+
+// Left Motor
+const int ENA = 5;       // L293D Pin 1
+const int IN1 = 2;       // L293D Pin 2
+const int IN2 = 3;       // L293D Pin 7
+
+// Right Motor
+const int ENB = 6;       // L293D Pin 9
+const int IN3 = 4;       // L293D Pin 10
+const int IN4 = 13;      // L293D Pin 15
+
+// ================= IR Simulation Switch Pins =================
+
+const int LEFT_IR = 7;   // Left switch middle pin
+const int RIGHT_IR = 8;  // Right switch middle pin
+
+// Switch connected to GND means line detected
+const int LINE_DETECTED = LOW;
+
+// ================= Ultrasonic Sensor Pins =================
+
+const int LEFT_TRIG = 9;
+const int LEFT_ECHO = 10;
+
+const int RIGHT_TRIG = 11;
+const int RIGHT_ECHO = 12;
+
+// ================= Speed Settings =================
+
+// Normal driving speed
+const int NORMAL_SPEED = 220;
+
+// Turning speed: lower than normal driving
+const int TURN_OUTER_SPEED = 125;
+const int TURN_INNER_SPEED = 45;
+
+// Motor stops when obstacle is at or below this distance
+const int OBSTACLE_DISTANCE = 30;   // cm
+
+// ================================================================
+// Ultrasonic distance reading function
+// ================================================================
+
+float readDistanceCM(int trigPin, int echoPin) {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  unsigned long duration = pulseIn(echoPin, HIGH, 30000);
+
+  if (duration == 0) {
+    return 999.0;   // No object detected
+  }
+
+  return duration * 0.0343 / 2.0;
+}
+
+// ================================================================
+// Left Motor Control
+// ================================================================
+
+void leftMotor(int speedValue) {
+  speedValue = constrain(speedValue, -255, 255);
+
+  if (speedValue > 0) {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    analogWrite(ENA, speedValue);
+  }
+  else if (speedValue < 0) {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    analogWrite(ENA, -speedValue);
+  }
+  else {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    analogWrite(ENA, 0);
+  }
+}
+
+// ================================================================
+// Right Motor Control
+// ================================================================
+
+void rightMotor(int speedValue) {
+  speedValue = constrain(speedValue, -255, 255);
+
+  if (speedValue > 0) {
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+    analogWrite(ENB, speedValue);
+  }
+  else if (speedValue < 0) {
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+    analogWrite(ENB, -speedValue);
+  }
+  else {
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
+    analogWrite(ENB, 0);
+  }
+}
+
+// ================================================================
+// Movement Functions
+// ================================================================
+
+void moveForwardFast() {
+  leftMotor(NORMAL_SPEED);
+  rightMotor(NORMAL_SPEED);
+}
+
+void turnLeftSlow() {
+  // Left motor slower, right motor slightly faster
+  leftMotor(TURN_INNER_SPEED);
+  rightMotor(TURN_OUTER_SPEED);
+}
+
+void turnRightSlow() {
+  // Right motor slower, left motor slightly faster
+  leftMotor(TURN_OUTER_SPEED);
+  rightMotor(TURN_INNER_SPEED);
+}
+
+void stopCar() {
+  leftMotor(0);
+  rightMotor(0);
+}
+
+// ================================================================
+// Setup
+// ================================================================
+
+void setup() {
+  Serial.begin(9600);
+
+  // Motor driver pins
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  // Switches acting as IR sensors
+  pinMode(LEFT_IR, INPUT_PULLUP);
+  pinMode(RIGHT_IR, INPUT_PULLUP);
+
+  // Ultrasonic sensors
+  pinMode(LEFT_TRIG, OUTPUT);
+  pinMode(LEFT_ECHO, INPUT);
+
+  pinMode(RIGHT_TRIG, OUTPUT);
+  pinMode(RIGHT_ECHO, INPUT);
+
+  stopCar();
+
+  Serial.println("Simulation Started");
+}
+
+// ================================================================
+// Main Loop
+// ================================================================
+
+void loop() {
+  // Read both IR simulation switches
+  bool leftLineDetected = (digitalRead(LEFT_IR) == LINE_DETECTED);
+  bool rightLineDetected = (digitalRead(RIGHT_IR) == LINE_DETECTED);
+
+  // Read both ultrasonic sensors
+  float leftDistance = readDistanceCM(LEFT_TRIG, LEFT_ECHO);
+  delay(15);
+  float rightDistance = readDistanceCM(RIGHT_TRIG, RIGHT_ECHO);
+
+  // Show values in Serial Monitor
+  Serial.print("Left Distance: ");
+  Serial.print(leftDistance);
+  Serial.print(" cm | Right Distance: ");
+  Serial.print(rightDistance);
+  Serial.print(" cm | Left IR: ");
+  Serial.print(leftLineDetected);
+  Serial.print(" | Right IR: ");
+  Serial.println(rightLineDetected);
+
+  // ============================================================
+  // Priority 1: Obstacle Detection
+  // If obstacle is near, motors stay fully OFF
+  // ============================================================
+
+  if (leftDistance <= OBSTACLE_DISTANCE ||
+      rightDistance <= OBSTACLE_DISTANCE) {
+
+    stopCar();
+    Serial.println("OBSTACLE DETECTED - CAR STOPPED");
+    delay(100);
+    return;
+  }
+
+  // ============================================================
+  // Priority 2: Line Following
+  // ============================================================
+
+  if (leftLineDetected && rightLineDetected) {
+    // Normal path: fast driving
+    moveForwardFast();
+    Serial.println("NORMAL SPEED - FORWARD");
+  }
+  else if (leftLineDetected && !rightLineDetected) {
+    // Slow left correction
+    turnLeftSlow();
+    Serial.println("SLOW TURN - LEFT");
+  }
+  else if (!leftLineDetected && rightLineDetected) {
+    // Slow right correction
+    turnRightSlow();
+    Serial.println("SLOW TURN - RIGHT");
+  }
+  else {
+    // Line not detected
+    stopCar();
+    Serial.println("LINE LOST - CAR STOPPED");
+  }
+
+  delay(50);
+}

@@ -1,0 +1,125 @@
+const byte ENA = 5;
+const byte IN1 = 2;
+const byte IN2 = 3;
+const byte ENB = 6;
+const byte IN3 = 4;
+const byte IN4 = 13;
+const byte LEFT_IR = 7;
+const byte RIGHT_IR = 8;
+const byte LEFT_TRIG = 9;
+const byte LEFT_ECHO = 10;
+const byte RIGHT_TRIG = 11;
+const byte RIGHT_ECHO = 12;
+
+const bool LEFT_MOTOR_REVERSED = false;
+const bool RIGHT_MOTOR_REVERSED = true;
+
+const int BLACK_VALUE = LOW;
+
+const int FORWARD_SPEED = 80;
+const int TURN_OUTER = 80;
+const int TURN_INNER = 20;
+const int SEARCH_SPEED = 60;
+const float STOP_DISTANCE = 15.0;
+
+int lastTurnDirection = 1;
+
+float readDistance(byte trigPin, byte echoPin) {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  unsigned long duration = pulseIn(echoPin, HIGH, 12000UL);
+  if (duration == 0) return 999.0;
+  return duration * 0.0343 / 2.0;
+}
+
+void setMotor(byte enablePin, byte pinA, byte pinB, int speedValue, bool reversed) {
+  speedValue = constrain(speedValue, -255, 255);
+  if (reversed) speedValue = -speedValue;
+  if (speedValue > 0) {
+    digitalWrite(pinA, HIGH);
+    digitalWrite(pinB, LOW);
+    analogWrite(enablePin, speedValue);
+  } else if (speedValue < 0) {
+    digitalWrite(pinA, LOW);
+    digitalWrite(pinB, HIGH);
+    analogWrite(enablePin, -speedValue);
+  } else {
+    analogWrite(enablePin, 0);
+    digitalWrite(pinA, LOW);
+    digitalWrite(pinB, LOW);
+  }
+}
+
+void drive(int leftSpeed, int rightSpeed) {
+  setMotor(ENA, IN1, IN2, leftSpeed, LEFT_MOTOR_REVERSED);
+  setMotor(ENB, IN3, IN4, rightSpeed, RIGHT_MOTOR_REVERSED);
+}
+
+void brakeNow() {
+  analogWrite(ENA, 255);
+  analogWrite(ENB, 255);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, HIGH);
+}
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(LEFT_IR, INPUT);
+  pinMode(RIGHT_IR, INPUT);
+  pinMode(LEFT_TRIG, OUTPUT);
+  pinMode(LEFT_ECHO, INPUT);
+  pinMode(RIGHT_TRIG, OUTPUT);
+  pinMode(RIGHT_ECHO, INPUT);
+  brakeNow();
+  delay(500);
+  Serial.println("READY");
+}
+
+void loop() {
+  float leftDist = readDistance(LEFT_TRIG, LEFT_ECHO);
+  delay(8);
+  float rightDist = readDistance(RIGHT_TRIG, RIGHT_ECHO);
+
+  if (leftDist <= STOP_DISTANCE || rightDist <= STOP_DISTANCE) {
+    brakeNow();
+    delay(20);
+    return;
+  }
+
+  bool leftOnBlack = (digitalRead(LEFT_IR) == BLACK_VALUE);
+  bool rightOnBlack = (digitalRead(RIGHT_IR) == BLACK_VALUE);
+
+  if (leftOnBlack && rightOnBlack) {
+    drive(FORWARD_SPEED, FORWARD_SPEED);
+    Serial.println("FORWARD");
+  } else if (leftOnBlack && !rightOnBlack) {
+    drive(TURN_INNER, TURN_OUTER);
+    lastTurnDirection = -1;
+    Serial.println("TURN LEFT");
+  } else if (!leftOnBlack && rightOnBlack) {
+    drive(TURN_OUTER, TURN_INNER);
+    lastTurnDirection = 1;
+    Serial.println("TURN RIGHT");
+  } else {
+    if (lastTurnDirection == -1) {
+      drive(-SEARCH_SPEED, SEARCH_SPEED);
+      Serial.println("LOST LEFT");
+    } else {
+      drive(SEARCH_SPEED, -SEARCH_SPEED);
+      Serial.println("LOST RIGHT");
+    }
+  }
+
+  delay(10);
+}

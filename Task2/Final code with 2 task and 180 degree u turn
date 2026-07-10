@@ -1,0 +1,290 @@
+#define ENA 5
+#define IN1 2
+#define IN2 3
+#define ENB 6
+#define IN3 4
+#define IN4 13
+
+#define LEFT_IR 7
+#define RIGHT_IR 8
+
+#define LEFT_TRIG 9
+#define LEFT_ECHO 10
+#define RIGHT_TRIG 11
+#define RIGHT_ECHO 12
+
+// Motor directions and sensor logic
+const bool LEFT_REVERSED = false;
+const bool RIGHT_REVERSED = true;
+const int BLACK_LINE = LOW;
+
+// Speed parameters
+int base_speed = 80;
+int turn_outer = 80;
+int turn_inner = 20;
+int search_speed = 60;
+const float stop_distance = 15.0; 
+
+// Obstacle bypass settings
+const int sharp_speed = 95; 
+const int sharp_time = 340;  
+int turn3_time = 370;            
+
+// U-turn settings
+const int uturn_speed = 110;      
+const int uturn_time = 600;       
+
+// State tracking variables
+int last_dir = 1; 
+int obstacle_count = 0;            
+bool bypass_active = false;          
+
+// Get distance from ultrasonic sensor
+float readDistance(byte trig, byte echo) {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  
+  unsigned long duration = pulseIn(echo, HIGH, 12000UL); 
+  if (duration == 0) return 999.0;
+  return duration * 0.0343 / 2.0;
+}
+
+// Low-level motor control driver
+void setMotor(byte en, byte pA, byte pB, int speed, bool rev) {
+  speed = constrain(speed, -255, 255);
+  if (rev) speed = -speed;
+  
+  if (speed > 0) {
+    digitalWrite(pA, HIGH);
+    digitalWrite(pB, LOW);
+    analogWrite(en, speed);
+  } else if (speed < 0) {
+    digitalWrite(pA, LOW);
+    digitalWrite(pB, HIGH);
+    analogWrite(en, -speed);
+  } else {
+    analogWrite(en, 0);
+    digitalWrite(pA, LOW);
+    digitalWrite(pB, LOW);
+  }
+}
+
+void drive(int left, int right) {
+  setMotor(ENA, IN1, IN2, left, LEFT_REVERSED);
+  setMotor(ENB, IN3, IN4, right, RIGHT_REVERSED);
+}
+
+void brake() {
+  analogWrite(ENA, 255);
+  analogWrite(ENB, 255);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, HIGH);
+}
+
+// 180 degree turn back loop
+void doUTurn() {
+  Serial.println("Secondary obstacle found! Doing U-Turn...");
+  brake();
+  delay(500);
+
+  // Spin on spot
+  drive(-uturn_speed, uturn_speed);
+  delay(uturn_time);
+  brake();
+  delay(150);
+
+  // Scan until track is found again
+  unsigned long t_start = millis();
+  while (true) {
+    if ((digitalRead(LEFT_IR) == BLACK_LINE) || (digitalRead(RIGHT_IR) == BLACK_LINE)) {
+      break; 
+    }
+    drive(40, 45); 
+
+    if (millis() - t_start > 4000) { 
+      brake();
+      break;
+    }
+    delay(2);
+  }
+  brake();
+  delay(200);
+}
+
+// 4-step obstacle tracking routine
+void handleBypass() {
+  bypass_active = true;
+  obstacle_count++; 
+  
+  if (obstacle_count >= 2) {
+    doUTurn();
+    bypass_active = false;
+    return;
+  }
+
+  Serial.println("First obstacle! Executing bypass routing...");
+  brake();
+  delay(500);
+  
+  // Turn 1: Veer right
+  drive(sharp_speed, -sharp_speed); 
+  delay(sharp_time); 
+  brake(); delay(150);
+  
+  // Turn 2: Move diagonally
+  drive(base_speed, base_speed);
+  delay(650); 
+  brake(); delay(150);
+  
+  // Turn 3: Clear obstacle side
+  drive(-sharp_speed, sharp_speed);
+  delay(sharp_time);
+  brake(); delay(150);
+  
+  // Straight run
+  drive(base_speed, base_speed);
+  delay(1000); 
+  brake(); delay(150);
+  
+  // Turn 4: Hook back inwards
+  drive(-sharp_speed, sharp_speed); 
+  delay(turn3_time); 
+  brake(); delay(200); 
+
+  // Fast scanning approach
+  unsigned long scan_start = millis();
+  bool caught = false;
+  
+  while (millis() - scan_start < 600) { 
+    drive(45, 55); 
+    if ((digitalRead(LEFT_IR) == BLACK_LINE) || (digitalRead(RIGHT_IR) == BLACK_LINE)) {
+      caught = true;
+      break; 
+    }
+    delay(2);
+  }
+  
+  // Deeper correction if missed
+  if (!caught) {
+    brake();
+    delay(150);
+    
+    drive(-sharp_speed, sharp_speed); 
+    delay(450); 
+    brake();
+    delay(150);
+    
+    scan_start = millis();
+    while (true) {
+      drive(35, 45); 
+      if ((digitalRead(LEFT_IR) == BLACK_LINE) || (digitalRead(RIGHT_IR) == BLACK_LINE)) {
+        break; 
+      }
+      if (millis() - scan_start > 5000) { 
+        brake();
+        bypass_active = false;
+        return;
+      }
+      delay(2);
+    }
+  }
+
+  // Final centering hunting sequence
+  unsigned long hunt = millis();
+  while (true) {
+    bool L = (digitalRead(LEFT_IR) == BLACK_LINE);
+    bool R = (digitalRead(RIGHT_IR) == BLACK_LINE);
+    
+    if (L && R) {
+      brake();
+      break;
+    }
+    else if (L && !R) {
+      drive(-35, 55); 
+    }
+    else if (!L && R) {
+      drive(55, -35); 
+    }
+    else {
+      drive(-50, -50); 
+      delay(40); 
+    }
+    
+    if (millis() - hunt > 5000) {
+      brake();
+      bypass_active = false;
+      return; 
+    }
+    delay(2);
+  }
+  
+  brake();
+  delay(400); 
+  bypass_active = false;
+}
+
+void setup() {
+  Serial.begin(9600);
+  
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  
+  pinMode(LEFT_IR, INPUT);
+  pinMode(RIGHT_IR, INPUT);
+  
+  pinMode(LEFT_TRIG, OUTPUT);
+  pinMode(LEFT_ECHO, INPUT);
+  pinMode(RIGHT_TRIG, OUTPUT);
+  pinMode(RIGHT_ECHO, INPUT);
+  
+  brake();
+  delay(500);
+  Serial.println("System Initialized.");
+}
+
+void loop() {
+  // Obstacle detection polling
+  if (!bypass_active) {
+    float d_left = readDistance(LEFT_TRIG, LEFT_ECHO);
+    delay(8); 
+    float d_right = readDistance(RIGHT_TRIG, RIGHT_ECHO);
+
+    if (d_left <= stop_distance || d_right <= stop_distance) {
+      handleBypass();
+      return;
+    }
+  }
+
+  // Base line following routines
+  bool left_state = (digitalRead(LEFT_IR) == BLACK_LINE);
+  bool right_state = (digitalRead(RIGHT_IR) == BLACK_LINE);
+
+  if (left_state && right_state) {
+    drive(base_speed, base_speed);
+  } 
+  else if (left_state && !right_state) {
+    drive(turn_inner, turn_outer);
+    last_dir = -1;
+  } 
+  else if (!left_state && right_state) {
+    drive(turn_outer, turn_inner);
+    last_dir = 1;
+  } 
+  else {
+    if (last_dir == -1) {
+      drive(-search_speed, search_speed);
+    } else {
+      drive(search_speed, -search_speed);
+    }
+  }
+  delay(6); 
+}
